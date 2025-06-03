@@ -1,0 +1,77 @@
+{
+    "jokes": [
+      {
+        "text": "I tried to teach a penguin how to drive, but he kept honking at the ice. Turns out, he just really wanted attention.",
+        "type": "Observational",
+        "approach": "Simple observation of penguin behavior combined with relatable human desire for attention. Plays on the image of a bewildered penguin.",
+        "tone": "Lighthearted"
+      },
+      {
+        "text": "Why did the penguin cross the playground? To get to the other slide – it was *ice*-olated.",
+        "type": "Wordplay",
+        "approach": "Pun utilizing 'isolated' and referencing a penguin’s environment. Simple and clean wordplay.",
+        "tone": "Witty"
+      },
+      {
+        "text": "My therapist told me I have issues with commitment. I said, ‘Well, you know penguins are notoriously short-lived.’",
+        "type": "Character-Based (Self-Deprecating)",
+        "approach": "Uses a slightly awkward and defensive character voice to deflect criticism with penguin facts.",
+        "tone": "Sarcastic"
+      },
+      {
+        "text": "I asked a penguin if he enjoyed swimming. He replied, ‘It’s cold, but the scenery is fantastic!’ He clearly has no sense of urgency about anything.",
+        "type": "Observational",
+        "approach": "Highlights the penguins' seemingly oblivious nature to discomfort or time constraints, creating an ironic contrast.",
+        "tone": "Lighthearted"
+      },
+      {
+        "text": "A penguin walks into a library and asks for books on astrophysics. The librarian says, ‘We don’t have any.’ The penguin replies, ‘Figures.’",
+        "type": "Absurdist",
+        "approach": "Unexpected reaction to a simple request, emphasizing the penguin's cynical outlook.",
+        "tone": "Absurd"
+      },
+      {
+        "text": "You know, penguins are basically just tiny, flightless waiters. Always standing there, looking slightly miserable, and occasionally sliding into things.",
+        "type": "Observational",
+        "approach": "Comparing penguins to waiters creates a humorous image of their posture and movements.",
+        "tone": "Witty"
+      },
+      {
+        "text": "I tried to build a penguin house. It was… well, it was just a really cold pile of snow with a slightly judgmental expression.",
+        "type": "Character-Based (Objectified)",
+        "approach": "Giving the penguin house a personality and expressing its judgemental nature.",
+        "tone": "Slightly Dark Humour/Absurd"
+      },
+      {
+        "text": "A penguin is sitting at a bar, ordering a martini. The bartender says, ‘You look like you need one.’ The penguin replies, ‘I *am* one.’",
+        "type": "Wordplay",
+        "approach": "Play on words – using 'one' to refer both to a martini and the penguin’s species.",
+        "tone": "Witty"
+      },
+      {
+        "text": "What did the penguin say when he lost his job? ‘I’m feeling a little *chill*.’",
+        "type": "Pun",
+        "approach": "Classic pun related to penguins and temperature.",
+        "tone": "Lighthearted"
+      },
+      {
+        "text": "My dating profile said I was 'adventurous.' My penguin friend just stared at me. I think he recognized a red flag – or, you know, an iceberg.",
+        "type": "Observational/Self-Deprecating",
+        "approach": "Contrast between human perception of adventure and penguin's likely interpretation.",
+        "tone": "Sarcastic"
+      },
+      {
+        "text": "I asked a group of penguins if they had any hobbies. They all just stared at the sea, contemplating their existential dread.",
+        "type": "Absurdist",
+        "approach": "Assigning complex emotions (existential dread) to a simple penguin behavior.",
+        "tone": "Dark Humour/Absurd"
+      },
+      {
+        "text": "A penguin walks into a police station and reports his ice sculpture is missing. The officer asks, ‘Did you report it?’ The penguin replies, ‘I’m not *sure* – it was a little melted.’",
+        "type": "Observational/Character-Based",
+        "approach": "Uses the penguin's environment and characteristic to create an awkward situation.",
+        "tone": "Witty"
+      }
+    ]
+  }
+  
