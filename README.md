@@ -66,7 +66,7 @@ The repository has the following structure:
 ### Installation and Usage
 ```bash
 # Install all the dependencies
-pip install -r requirements.txt
+pip install openai
 
 # Run the main pipeline (change the default config unless you want only penguin jokes xD)
 python main.py
@@ -78,7 +78,7 @@ python baseline_joke_gen.py "penguins" --save-raw --enhanced -n 12 -o baseline.j
 python joke_judge.py --multistage results.json --baseline baseline_1.json \
     --api-endpoint "https://openrouter.ai/api/v1"
 ```
-Please note that there is just a single requirement of openai in terms of dependencies. 
+Please note that there is just a single requirement of OpenAI in terms of dependencies.
 
 ## Models Used for Generation and Judgement
 
@@ -142,9 +142,9 @@ Honestly, because the entire idea seems hilarious, I honestly can't think why I 
 
 I think I learnt quite a lot of things:
 
-- It's a lot more harder to implement ideas from research papers as it seems even if a reference code repository is available.
-- Even though I know about rate limits, while running my judge code, it was a hard reminder for me to add fallbacks in code interacting with LLMs, especially when using free tier APIs to respect rate limits :(
-- Inferencing on a local device (especially a Laptop) is tricky even if the model technically fits in the VRAM buffer. There whole hosts of things that can influence inference from background processes to just heat dissipation.
+- It's a lot harder to implement ideas from research papers for novel downstream tasks whose scope hasn't been explored or even discussed in the associated research work.
+- Inferencing on a local device (especially a Laptop) is tricky even if the model technically fits in the VRAM buffer. There are a whole host of things that can influence inference from background processes to just heat dissipation.
+- LLMs seem to have a completely different notion of humour and seem to conflate it with structural rigour and absurdism.
 - LLM-as-a-Judge is a very sketchy metric in literature; its use has been justified by stating that they are not much better or worse than their human counterparts. Which I personally find hard to digest.
 
 
