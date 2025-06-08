@@ -49,36 +49,109 @@ graph TD
 The repository has the following structure:
 ```
 .
-├── baseline_1.json
-├── baseline_joke_gen.py
-├── baseline.json
-├── gen_ideas.py
-├── gen_jokes.py
-├── gen_rubrics.py
-├── joke_judge.py
-├── joke_judgments.json
-├── main.py
-├── README.md
-├── results.json
-└── uv.lock
+├── .env                  # Configuration file
+├── baseline_joke_gen.py  # Direct joke generation
+├── gen_ideas.py          # Generate observations and ideas
+├── gen_jokes.py          # Generate jokes from rubrics
+├── gen_rubrics.py        # Generate and refine rubrics
+├── joke_judge.py         # Evaluate jokes
+├── main.py               # Main pipeline script
+├── README.md             # Documentation
+├── requirements.txt      # Dependencies
+├── utils/                # Utility modules
+│   ├── __init__.py
+│   └── config.py         # Configuration management
 ```
 
-### Installation and Usage
-```bash
-# Install all the dependencies
-pip install openai
+### Installation and Setup
 
-# Run the main pipeline (change the default config unless you want only penguin jokes xD)
+1. **Clone the repository**:
+   ```bash
+   git clone <repository-url>
+   cd lossfunk_assignment
+   ```
+
+2. **Set up a virtual environment**:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+3. **Install dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Configure environment variables**:
+   Create or modify `.env` file in the project root:
+   ```
+   # API Configuration
+   OPENAI_API_KEY=your_openai_api_key_here
+   OPENROUTER_API_KEY=your_openrouter_api_key_here
+   LLM_API_BASE_URL=http://localhost:1234/v1/
+
+   # LLM Model Selection
+   DEFAULT_MODEL=gemma-3-4b-it-qat
+   JUDGE_MODEL=deepseek/deepseek-chat:free
+
+   # Pipeline Configuration
+   DEFAULT_THEME=penguins
+   DEFAULT_NUM_IDEAS=3
+   DEFAULT_RUBRICS_PER_IDEA=2
+   DEFAULT_CRITIQUES_PER_RUBRIC=1
+   DEFAULT_OUTPUT_FILE=results.json
+   BASELINE_OUTPUT_FILE=baseline.json
+   ```
+
+### Usage
+
+#### Running the Full Pipeline
+
+Run the entire joke generation pipeline (ideas → rubrics → jokes → evaluation):
+```bash
+# Using default theme from .env
 python main.py
 
-# Generate baseline jokes without all these framework shenanigans to see if this even works
-python baseline_joke_gen.py "penguins" --save-raw --enhanced -n 12 -o baseline.json
+# Specify a custom theme
+python main.py --theme "Space Travel"
 
-# Run the evaluation suite (needs json files containing both baseline and plansearch jokes)
-python joke_judge.py --multistage results.json --baseline baseline_1.json \
+# Customize processing parameters
+python main.py --theme "Artificial Intelligence" --ideas 4 --rubrics 2 --critiques 1
+```
+
+#### Running Specific Components
+
+Generate baseline jokes (direct approach without the multi-stage framework):
+```bash
+python baseline_joke_gen.py "penguins" --enhanced -n 5 -o baseline.json
+```
+
+Interactive baseline generation:
+```bash
+python baseline_joke_gen.py --interactive
+```
+
+Evaluate and compare joke quality:
+```bash
+python joke_judge.py --multistage results.json --baseline baseline.json
+```
+
+Using OpenRouter (if available):
+```bash
+python joke_judge.py --multistage results.json --baseline baseline.json \
     --api-endpoint "https://openrouter.ai/api/v1"
 ```
-Please note that there is just a single requirement of OpenAI in terms of dependencies.
+
+#### Advanced Configuration
+
+Skip stages using flags:
+```bash
+# Skip baseline generation
+python main.py --theme "Robots" --no-baseline
+
+# Skip judging
+python main.py --theme "Robots" --no-judge
+```
 
 ## Models Used for Generation and Judgement
 
