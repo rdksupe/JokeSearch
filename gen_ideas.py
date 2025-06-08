@@ -3,11 +3,12 @@ from openai import OpenAI
 import os
 import json
 import sys
+import re
+from utils.config import get_api_base_url, get_openai_key, DEFAULT_MODEL
 
 def openai_llm_call(prompt_content: str, purpose: str, json_format: str) -> dict:
     """
     Makes a call to the OpenAI API and parses the JSON response.
-    Simplified version that exits on failure.
     
     Args:
         prompt_content: The prompt to send to the API
@@ -19,14 +20,17 @@ def openai_llm_call(prompt_content: str, purpose: str, json_format: str) -> dict
     """
     print(f"\n--- OpenAI LLM Call ({purpose}) ---")
     
-    # Check API key
-    if not os.getenv("OPENAI_API_KEY"):
-        print("Error: OPENAI_API_KEY not found. Please set it as an environment variable.")
+    # Get API configuration from environment
+    api_base_url = get_api_base_url()
+    api_key = get_openai_key()
+    
+    if not api_key:
+        print("Error: OPENAI_API_KEY not found in configuration.")
         sys.exit(1)
     
     try:
-        # Initialize client with local API
-        client = OpenAI(base_url="http://localhost:1234/v1/")
+        # Initialize client with API details
+        client = OpenAI(base_url=api_base_url, api_key=api_key)
         
         # Prepare system prompt that explicitly asks for JSON
         system_prompt = (
@@ -36,7 +40,7 @@ def openai_llm_call(prompt_content: str, purpose: str, json_format: str) -> dict
         
         # Make the API call
         response = client.chat.completions.create(
-            model="gemma-3-4b-it-qat",
+            model=DEFAULT_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt_content}
@@ -48,18 +52,15 @@ def openai_llm_call(prompt_content: str, purpose: str, json_format: str) -> dict
         raw_content = response.choices[0].message.content
         print(f"Raw response (first 100 chars): {raw_content[:100]}...")
         
-        # Clean up response if it's in a code block
-        if "```json" in raw_content:
-            raw_content = raw_content.split("```json")[1].split("```")[0].strip()
-        elif "```" in raw_content:
-            raw_content = raw_content.split("```")[1].split("```")[0].strip()
+        # Clean up response and extract JSON
+        clean_json = extract_valid_json(raw_content)
         
-        # Parse JSON
         try:
-            return json.loads(raw_content)
-        except json.JSONDecodeError:
-            print(f"Error: Failed to parse JSON from response: {raw_content}")
-            sys.exit(1)
+            return json.loads(clean_json)
+        except json.JSONDecodeError as e:
+            print(f"Error: Failed to parse JSON from response: {clean_json}")
+            print(f"JSON error: {e}")
+            return fallback_json_extraction(raw_content, purpose)
     
     except Exception as e:
         print(f"Error calling LLM API: {e}")
@@ -67,6 +68,97 @@ def openai_llm_call(prompt_content: str, purpose: str, json_format: str) -> dict
         traceback.print_exc()
         sys.exit(1)
 
+def extract_valid_json(text):
+    """
+    Extract valid JSON from text that might include code blocks, explanations, etc.
+    """
+    # First try to extract from code blocks if present
+    if "```json" in text:
+        parts = text.split("```json", 1)
+        if len(parts) > 1:
+            # Get content after ```json marker
+            json_part = parts[1]
+            # Find the closing ```
+            if "```" in json_part:
+                # Extract content between ```json and the next ```
+                json_text = json_part.split("```", 1)[0].strip()
+                return json_text
+    
+    # If there's a code block without language specification
+    if "```" in text:
+        parts = text.split("```", 1)
+        if len(parts) > 1:
+            # Get content after first ``` marker
+            json_part = parts[1]
+            # Find the closing ```
+            if "```" in json_part:
+                # Extract content between first ``` and the next ```
+                json_text = json_part.split("```", 1)[0].strip()
+                return json_text
+    
+    # If no code blocks or extraction failed, try to find JSON between { and }
+    # This looks for the outermost matching braces in the text
+    text = text.strip()
+    start_idx = text.find('{')
+    if start_idx != -1:
+        # Find matching closing brace by counting opening and closing braces
+        brace_count = 0
+        for i in range(start_idx, len(text)):
+            if text[i] == '{':
+                brace_count += 1
+            elif text[i] == '}':
+                brace_count -= 1
+                if brace_count == 0:
+                    # Found complete JSON - return it
+                    return text[start_idx:i+1]
+    
+    # If all else fails, return the original text
+    return text
+
+def fallback_json_extraction(text, purpose):
+    """
+    Last resort extraction of JSON when parsing fails.
+    Attempts to build a valid JSON structure based on the purpose.
+    """
+    print(f"Attempting fallback JSON extraction for {purpose}...")
+    
+    # For first-order or second-order observations
+    if purpose in ["first_order_observations", "second_order_observations"]:
+        # Try to extract a list of items
+        items = re.findall(r'"([^"]*)"', text)
+        if not items:
+            # Try to find numbered or bullet items
+            items = re.findall(r'(?:\d+\.|\*)\s*(.*?)(?=(?:\d+\.|\*)|$)', text)
+        
+        if items:
+            return {"observations": [item.strip() for item in items]}
+        else:
+            print("Fallback extraction failed. Using default observations.")
+            return {"observations": ["Observation 1", "Observation 2", "Observation 3"]}
+    
+    # For joke ideas
+    elif purpose == "formulate_joke_ideas":
+        # Try to extract concepts
+        concepts = []
+        pattern = r'(?:"concept"\s*:\s*"([^"]*)"|(?:\d+\.|\*)\s*(.*?)(?=(?:\d+\.|\*)|$))'
+        matches = re.findall(pattern, text)
+        
+        for match in matches:
+            # Each match is a tuple with groups from the pattern
+            # Take the non-empty group
+            concept = next((m for m in match if m), "").strip()
+            if concept:
+                concepts.append({"concept": concept})
+        
+        if concepts:
+            return {"ideas": concepts}
+        else:
+            print("Fallback extraction failed. Using default ideas.")
+            return {"ideas": [{"concept": "Default joke idea 1"}, {"concept": "Default joke idea 2"}]}
+    
+    # Default case
+    print("Unknown purpose for fallback extraction. Using empty object.")
+    return {}
 
 def generate_first_order_observations(theme: str) -> list[str]:
     """
@@ -135,8 +227,10 @@ def formulate_joke_ideas(all_observations: list[str], theme: str) -> list[dict]:
 
 
 if __name__ == '__main__':
-    if not os.getenv("OPENAI_API_KEY"):
-        print("CRITICAL: OPENAI_API_KEY environment variable not set.")
+    from utils.config import initialize_config
+    
+    if not initialize_config():
+        print("Failed to initialize configuration. Please check your .env file.")
         sys.exit(1)
     
     sample_theme = "Modern Technology Woes"

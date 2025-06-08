@@ -20,6 +20,7 @@ import argparse
 import os
 import re
 from openai import OpenAI
+from utils.config import get_api_base_url, get_openai_key, DEFAULT_MODEL
 
 def _extract_json_from_text(text):
     """
@@ -29,60 +30,34 @@ def _extract_json_from_text(text):
     if not text:
         return "{}"
     
-    # First, try to find the most complete JSON object in the text
-    # This pattern looks for either a JSON code block or a raw JSON object
-    json_candidates = []
+    # Check if text starts with ```json
+    if text.strip().startswith("```json"):
+        # Extract content between ```json and the closing ```
+        parts = text.strip().split("```json", 1)
+        if len(parts) > 1 and "```" in parts[1]:
+            json_content = parts[1].split("```", 1)[0].strip()
+            return json_content
     
-    # Look for JSON in markdown code blocks (handling nested code blocks)
-    json_block_pattern = r"```(?:json)?\s*([\s\S]+?)```"
-    json_blocks = re.findall(json_block_pattern, text)
-    for block in json_blocks:
-        # Check if this block contains a valid JSON object
-        try:
-            # Find opening { and closing } that form a complete object
-            start_idx = block.find('{')
-            if start_idx != -1:
-                # Count brackets to find matching closing }
-                brace_count = 0
-                for i in range(start_idx, len(block)):
-                    if block[i] == '{':
-                        brace_count += 1
-                    elif block[i] == '}':
-                        brace_count -= 1
-                        if brace_count == 0:
-                            # Found complete JSON object
-                            json_candidates.append(block[start_idx:i+1])
-        except Exception:
-            pass
+    # Check if text starts with ``` (no json specified)
+    if text.strip().startswith("```"):
+        # Extract content between ``` and the closing ```
+        parts = text.strip().split("```", 1)
+        if len(parts) > 1 and "```" in parts[1]:
+            json_content = parts[1].split("```", 1)[0].strip()
+            return json_content
     
-    # If no valid JSON objects found in code blocks, try to extract JSON directly
-    if not json_candidates:
-        try:
-            start_idx = text.find('{')
-            if start_idx != -1:
-                # Count brackets to find matching closing }
-                brace_count = 0
-                for i in range(start_idx, len(text)):
-                    if text[i] == '{':
-                        brace_count += 1
-                    elif text[i] == '}':
-                        brace_count -= 1
-                        if brace_count == 0:
-                            # Found complete JSON object
-                            json_candidates.append(text[start_idx:i+1])
-        except Exception:
-            pass
+    # If text itself appears to be a JSON object
+    if text.strip().startswith("{") and text.strip().endswith("}"):
+        return text.strip()
     
-    # Try each candidate until we find one that parses correctly
-    for candidate in json_candidates:
-        try:
-            json.loads(candidate)
-            return candidate
-        except json.JSONDecodeError:
-            continue
+    # Try to find JSON object within the text
+    start_idx = text.find('{')
+    end_idx = text.rfind('}')
+    if start_idx != -1 and end_idx != -1 and start_idx < end_idx:
+        return text[start_idx:end_idx+1]
     
-    # If we get here, no valid JSON was found - return the original text
-    return text.strip()
+    # If no JSON found, return original text
+    return text
 
 def _parse_jokes_from_response(raw_content):
     """
@@ -90,69 +65,136 @@ def _parse_jokes_from_response(raw_content):
     """
     jokes_data = []
     
-    # First try: direct JSON parsing with improved extraction
+    # First try: Find and extract JSON content
     try:
-        # Extract JSON content from potentially complex response
-        json_str = _extract_json_from_text(raw_content)
-        data = json.loads(json_str)
+        # Clean the content first and extract the JSON
+        extracted_json = _extract_json_from_text(raw_content)
+        print(f"Extracted JSON: {extracted_json[:100]}...")
+        data = json.loads(extracted_json)
         
-        # Handle different response structures
+        # Handle different JSON structures
         if isinstance(data, dict):
             if "jokes" in data and isinstance(data["jokes"], list):
                 jokes_data = data["jokes"]
+                print(f"Found {len(jokes_data)} jokes in JSON 'jokes' array")
             elif "text" in data:
                 # Single joke directly in the response
                 jokes_data = [data]
+                print("Found single joke in JSON")
         elif isinstance(data, list):
             jokes_data = data
+            print(f"Found {len(jokes_data)} jokes in JSON array")
+        return jokes_data  # Return successfully parsed jokes
     except json.JSONDecodeError as e:
         print(f"JSON parsing failed, trying alternative extraction... Error: {e}")
+    except Exception as e:
+        print(f"Unexpected error in JSON parsing: {e}")
+        import traceback
+        traceback.print_exc()
     
-    # If no jokes found yet, try regex-based approaches
+    # Second try: If the first attempt failed, try a more direct approach
+    if not jokes_data:
+        try:
+            # Try to directly parse the entire response as JSON (with lenient parsing)
+            # Sometimes the response includes the full JSON structure but with extra text
+            text_to_parse = raw_content
+            
+            # If the JSON appears to be inside a code block, clean it up
+            if "```json" in text_to_parse:
+                # Extract everything between ```json and the last ```
+                start = text_to_parse.find("```json") + 7
+                end = text_to_parse.rfind("```")
+                if start < end:
+                    text_to_parse = text_to_parse[start:end].strip()
+                    try:
+                        data = json.loads(text_to_parse)
+                        if "jokes" in data and isinstance(data["jokes"], list):
+                            jokes_data = data["jokes"]
+                            print(f"Found {len(jokes_data)} jokes in code block")
+                            return jokes_data
+                    except:
+                        pass
+            
+            # Try to get jokes from the raw JSON using regex pattern
+            # Find the substring that looks like valid JSON
+            json_pattern = r'\{\s*"jokes"\s*:\s*\[.*?\]\s*\}'
+            json_matches = re.search(json_pattern, text_to_parse, re.DOTALL)
+            
+            if json_matches:
+                json_text = json_matches.group(0)
+                try:
+                    data = json.loads(json_text)
+                    if "jokes" in data and isinstance(data["jokes"], list):
+                        jokes_data = data["jokes"]
+                        print(f"Found {len(jokes_data)} jokes using regex pattern")
+                        return jokes_data
+                except:
+                    pass
+        except Exception as e:
+            print(f"Second parsing attempt failed: {e}")
+    
+    # Third try: Extract jokes manually using regex
     if not jokes_data:
         # Look for standard joke objects with text fields
         try:
-            json_text_pattern = r"\"text\":\s*\"([^\"]+)\""
+            json_text_pattern = r'"text"\s*:\s*"([^"]+)"'
             text_matches = re.findall(json_text_pattern, raw_content)
             
-            json_type_pattern = r"\"type\":\s*\"([^\"]+)\""
+            json_type_pattern = r'"type"\s*:\s*"([^"]+)"'
             type_matches = re.findall(json_type_pattern, raw_content)
+            
+            json_approach_pattern = r'"approach"\s*:\s*"([^"]+)"'
+            approach_matches = re.findall(json_approach_pattern, raw_content)
+            
+            json_tone_pattern = r'"tone"\s*:\s*"([^"]+)"'  # Fixed: Define tone_pattern variable
+            tone_matches = re.findall(json_tone_pattern, raw_content)
             
             # If we found text fields, create joke objects
             if text_matches:
                 for i, text in enumerate(text_matches):
-                    joke_type = type_matches[i] if i < len(type_matches) else "General"
-                    jokes_data.append({
-                        "text": text,
-                        "type": joke_type
-                    })
+                    joke = {"text": text}
+                    
+                    if i < len(type_matches):
+                        joke["type"] = type_matches[i]
+                    else:
+                        joke["type"] = "General"
+                        
+                    if i < len(approach_matches):
+                        joke["approach"] = approach_matches[i]
+                    
+                    if i < len(tone_matches):
+                        joke["tone"] = tone_matches[i]
+                        
+                    jokes_data.append(joke)
+                print(f"Found {len(jokes_data)} jokes using field extraction")
+                return jokes_data
         except Exception as e:
-            print(f"JSON field extraction failed: {e}")
+            print(f"Field extraction failed: {e}")
     
-    # If still no jokes, try to extract numbered jokes
-    if not jokes_data:
-        try:
-            # Look for numbered jokes
-            joke_pattern = r"(?:^|\n)(?:Joke\s*\d+:|#\d+:?)\s*(.*?)(?=(?:\n(?:Joke\s*\d+:|#\d+:))|$)"
-            matches = re.findall(joke_pattern, raw_content, re.DOTALL)
-            
-            if matches:
-                for joke_text in matches:
-                    jokes_data.append({"text": joke_text.strip(), "type": "General"})
-        except Exception as e:
-            print(f"Numbered joke extraction failed: {e}")
-    
-    # Last resort: treat the whole response as one joke
-    if not jokes_data and raw_content.strip():
-        # Remove any markdown or code block markers
-        cleaned_content = re.sub(r'```(?:json)?\s*', '', raw_content)
-        cleaned_content = re.sub(r'```\s*', '', cleaned_content)
+    # Last resort: if all else fails, treat the response as a single joke
+    if raw_content.strip():
+        cleaned_content = raw_content.strip()
+        if "```" in cleaned_content:
+            # Remove code block markers
+            cleaned_content = re.sub(r'```(?:json)?', '', cleaned_content).strip()
+            cleaned_content = cleaned_content.replace("```", "").strip()
         
-        jokes_data = [{"text": cleaned_content.strip(), "type": "General"}]
+        # Try to extract full JSON one last time
+        try:
+            if cleaned_content.startswith('{') and cleaned_content.endswith('}'):
+                data = json.loads(cleaned_content)
+                if "jokes" in data and isinstance(data["jokes"], list):
+                    return data["jokes"]
+        except:
+            pass
+        
+        # If that still fails, use the whole content as a joke
+        jokes_data = [{"text": cleaned_content, "type": "General"}]
+        print("Using entire response as a single joke")
     
     return jokes_data
 
-def generate_joke(prompt: str, num_jokes: int = 1, model: str = "gemma-3-4b-it-qat", enhanced: bool = False, save_raw: bool = False) -> tuple:
+def generate_joke(prompt: str, num_jokes: int = 1, model: str = DEFAULT_MODEL, enhanced: bool = False, save_raw: bool = False) -> tuple:
     """
     Generate jokes directly from a prompt without using the multi-stage framework.
     
@@ -174,11 +216,14 @@ def generate_joke(prompt: str, num_jokes: int = 1, model: str = "gemma-3-4b-it-q
     print(f"Using {'enhanced' if enhanced else 'basic'} prompting")
     
     try:
-        # Use localhost endpoint for OpenAI API
-        client = OpenAI(base_url="http://localhost:1234/v1/")
+        # Use API endpoint from configuration
+        api_base_url = get_api_base_url()
+        api_key = get_openai_key()
         
-        if not os.getenv("OPENAI_API_KEY"):
-            print("Error: OPENAI_API_KEY environment variable not set")
+        client = OpenAI(base_url=api_base_url, api_key=api_key)
+        
+        if not api_key:
+            print("Error: OPENAI_API_KEY not configured")
             return [], None
         
         if enhanced:
@@ -343,7 +388,7 @@ def main():
     parser.add_argument("-n", "--num-jokes", type=int, default=1, help="Number of jokes to generate")
     parser.add_argument("-i", "--interactive", action="store_true", help="Run in interactive mode")
     parser.add_argument("-e", "--enhanced", action="store_true", help="Use enhanced prompting for fairer comparison")
-    parser.add_argument("-m", "--model", default="gemma-3-4b-it-qat", help="Model to use")
+    parser.add_argument("-m", "--model", default=DEFAULT_MODEL, help="Model to use")
     parser.add_argument("-o", "--output", help="Output JSON file to save jokes")
     parser.add_argument("-r", "--save-raw", action="store_true", help="Save raw LLM responses in output file")
     

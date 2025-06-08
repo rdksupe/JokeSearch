@@ -1,10 +1,11 @@
 # gen_jokes.py
 
 import uuid
-import openai
 import os
 import json
 import re
+from openai import OpenAI
+from utils.config import get_api_base_url, get_openai_key, DEFAULT_MODEL
 
 # --- OpenAI API Configuration ---
 # Ensure your OpenAI API key is set as an environment variable: OPENAI_API_KEY
@@ -25,7 +26,7 @@ def _extract_json_from_text(text):
     try:
         start_idx = text.find('{')
         end_idx = text.rfind('}')
-        if start_idx != -1 and end_idx != -1:
+        if (start_idx != -1 and end_idx != -1):
             return text[start_idx:end_idx+1].strip()
     except:
         pass
@@ -41,15 +42,20 @@ def _openai_llm_call(prompt_content: str, purpose: str, expected_format_descript
     print(f"System Instruction: {expected_format_description}")
     print(f"User Prompt (first 200 chars): {prompt_content[:200]}...")
 
-    if not openai.api_key and not os.getenv("OPENAI_API_KEY"):
-        print("Error: OPENAI_API_KEY not found. Please set it as an environment variable.")
+    # Get API configuration from environment
+    api_base_url = get_api_base_url()
+    api_key = get_openai_key()
+    
+    if not api_key:
+        print("Error: OPENAI_API_KEY not found in configuration.")
         return _fallback_placeholder_response(purpose)
 
     try:
-        # Use localhost endpoint for OpenAI API
-        client = openai.OpenAI(base_url="http://localhost:1234/v1/")
+        # Initialize client with API configuration
+        client = OpenAI(base_url=api_base_url, api_key=api_key)
+        
         response = client.chat.completions.create(
-            model="gemma-3-4b-it-qat", # Using Gemma model
+            model=DEFAULT_MODEL,
             messages=[
                 {"role": "system", "content": f"You are a helpful assistant. Your response should be a JSON string that can be parsed into the following Python structure: {expected_format_description}. Do not include any explanatory text outside of the JSON string itself."},
                 {"role": "user", "content": prompt_content}
@@ -212,8 +218,11 @@ def generate_joke_from_rubric(rubric: dict, joke_idea: dict, theme: str) -> dict
 
 
 if __name__ == '__main__':
-    if not os.getenv("OPENAI_API_KEY"):
-        print("CRITICAL: OPENAI_API_KEY environment variable not set. This script will use fallback placeholders.")
+    from utils.config import initialize_config
+    
+    if not initialize_config():
+        print("Failed to initialize configuration. Please check your .env file.")
+        sys.exit(1)
     
     sample_theme = "Technology Frustrations"
     sample_joke_idea = {

@@ -1,11 +1,37 @@
 # gen_rubrics.py
 import uuid
-import openai
 import os
 import json
+import sys
+import re
+from openai import OpenAI
+from openai import APIError, BadRequestError  # Import specific exceptions
+from utils.config import get_api_base_url, get_openai_key, DEFAULT_MODEL
 
-# --- OpenAI API Configuration ---
-# Ensure your OpenAI API key is set as an environment variable: OPENAI_API_KEY
+def _extract_and_clean_json(raw_text):
+    """Extract and clean JSON from text, handling code blocks and invalid characters"""
+    # First, extract JSON content if it's in a code block
+    if "```json" in raw_text:
+        parts = raw_text.split("```json", 1)
+        if len(parts) > 1 and "```" in parts[1]:
+            raw_text = parts[1].split("```", 1)[0].strip()
+    elif "```" in raw_text:
+        parts = raw_text.split("```", 1)
+        if len(parts) > 1 and "```" in parts[1]:
+            raw_text = parts[1].split("```", 1)[0].strip()
+    
+    # Clean control characters that might cause JSON parsing to fail
+    # Replace various problematic characters with appropriate replacements
+    cleaned_text = re.sub(r'[\x00-\x1F\x7F]', '', raw_text)
+    
+    # Replace Unicode quotes with straight quotes
+    cleaned_text = cleaned_text.replace('"', '"').replace('"', '"')
+    cleaned_text = cleaned_text.replace("'", "'").replace("'", "'")
+    
+    # Also handle escaped characters like \n \t etc.
+    cleaned_text = cleaned_text.replace('\\n', ' ').replace('\\t', ' ')
+    
+    return cleaned_text
 
 def _openai_llm_call(prompt_content: str, purpose: str, expected_format_description: str) -> any:
     """
@@ -15,41 +41,61 @@ def _openai_llm_call(prompt_content: str, purpose: str, expected_format_descript
     print(f"System Instruction: {expected_format_description}")
     print(f"User Prompt (first 200 chars): {prompt_content[:200]}...")
 
-    if not openai.api_key and not os.getenv("OPENAI_API_KEY"):
-        print("Error: OPENAI_API_KEY not found. Please set it as an environment variable.")
+    # Get API configuration from environment
+    api_base_url = get_api_base_url()
+    api_key = get_openai_key()
+    
+    if not api_key:
+        print("Error: OPENAI_API_KEY not found in configuration.")
         return _fallback_placeholder_response(purpose)
 
     try:
-        # Use localhost endpoint for OpenAI API
-        client = openai.OpenAI(base_url="http://localhost:1234/v1/")
+        # Initialize client with API configuration
+        client = OpenAI(base_url=api_base_url, api_key=api_key)
+        
         response = client.chat.completions.create(
-            model="gemma-3-4b-it-qat", # Using Gemma model
+            model=DEFAULT_MODEL, 
             messages=[
-                {"role": "system", "content": f"You are a helpful assistant. Your response should be a JSON string that can be parsed into the following Python structure: {expected_format_description}. Do not include any explanatory text outside of the JSON string itself."},
+                {"role": "system", "content": f"You are a helpful assistant. Your response should be a pure JSON object with this structure: {expected_format_description}. No markdown, no explanations, just the JSON object."},
                 {"role": "user", "content": prompt_content}
             ],
             temperature=0.7,
-            # Remove response_format for Gemma
         )
         
         raw_response_content = response.choices[0].message.content
-        print(f"Raw LLM Response: {raw_response_content}")
-
-        # Handle JSON in markdown code blocks
-        if raw_response_content.startswith("```json"):
-            raw_response_content = raw_response_content.strip("```json\n").strip("```\n")
-        elif raw_response_content.startswith("```"):
-            raw_response_content = raw_response_content.strip("```\n").strip("```")
+        print(f"Raw LLM Response (first 100 chars): {raw_response_content[:100]}...")
         
-        parsed_response = json.loads(raw_response_content)
-        return parsed_response
+        # Extract and clean JSON from response before parsing
+        try:
+            cleaned_json = _extract_and_clean_json(raw_response_content)
+            parsed_response = json.loads(cleaned_json)
+            return parsed_response
+        except json.JSONDecodeError as e:
+            print(f"JSON Decode Error ({purpose}): {e}")
+            print("Attempting alternate JSON extraction...")
+            
+            # Try to extract JSON between curly braces
+            match = re.search(r'\{.+\}', raw_response_content, re.DOTALL)
+            if match:
+                try:
+                    json_str = match.group(0)
+                    cleaned_json = _extract_and_clean_json(json_str)
+                    return json.loads(cleaned_json)
+                except json.JSONDecodeError:
+                    pass
+            
+            # Fall back to placeholder if all parsing fails
+            print("Failed to extract valid JSON")
+            return _fallback_placeholder_response(purpose)
 
-    except openai.APIError as e:
+    except APIError as e:  # Using the imported APIError
         print(f"OpenAI API Error ({purpose}): {e}")
-    except json.JSONDecodeError as e:
-        print(f"JSON Decode Error ({purpose}): Failed to parse LLM response. Response was: {raw_response_content}. Error: {e}")
+    except BadRequestError as e:  # Using the imported BadRequestError
+        print(f"OpenAI Bad Request Error ({purpose}): {e}")
     except Exception as e:
         print(f"An unexpected error occurred during LLM call ({purpose}): {e}")
+        import traceback
+        traceback.print_exc()
     
     return _fallback_placeholder_response(purpose)
 
@@ -201,8 +247,11 @@ def critique_and_refine_rubrics(original_rubrics: list, joke_idea: dict, theme: 
 
 
 if __name__ == '__main__':
-    if not os.getenv("OPENAI_API_KEY"):
-        print("CRITICAL: OPENAI_API_KEY environment variable not set. This script will use fallback placeholders.")
+    from utils.config import initialize_config
+    
+    if not initialize_config():
+        print("Failed to initialize configuration. Please check your .env file.")
+        sys.exit(1)
 
     sample_theme_rubric = "Social Media Addiction"
     sample_joke_idea_rubric = {

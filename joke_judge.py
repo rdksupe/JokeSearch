@@ -20,9 +20,10 @@ import re
 from pathlib import Path
 from typing import List, Dict, Any, Tuple
 from openai import OpenAI
+from utils.config import get_api_base_url, get_openai_key, get_openrouter_key, JUDGE_MODEL
 
 class JokeJudge:
-    def __init__(self, model: str = "openrouter/optimus-alpha", api_endpoint: str = None, api_key: str = None):
+    def __init__(self, model: str = JUDGE_MODEL, api_endpoint: str = None, api_key: str = None):
         """
         Initialize the joke judge.
         
@@ -37,7 +38,7 @@ class JokeJudge:
         if api_endpoint and api_endpoint.strip():
             self.client = OpenAI(
                 base_url=api_endpoint,
-                api_key=api_key or os.getenv("OPENROUTER_API_KEY"),
+                api_key=api_key or get_openrouter_key(),
                 default_headers={
                     "HTTP-Referer": "https://github.com/joke-generator",  # Required for OpenRouter
                     "X-Title": "Joke Judge"  # Optional for OpenRouter
@@ -45,9 +46,12 @@ class JokeJudge:
             )
             print(f"Using custom API endpoint: {api_endpoint}")
         else:
-            # Use default endpoint (localhost or specified by environment)
-            self.client = OpenAI(base_url="http://localhost:1234/v1/")
-            print("Using default API endpoint: http://localhost:1234/v1/")
+            # Use default endpoint from configuration
+            self.client = OpenAI(
+                base_url=get_api_base_url(),
+                api_key=get_openai_key()
+            )
+            print(f"Using default API endpoint: {get_api_base_url()}")
             
         self.evaluation_params = [
             "Humor Level", 
@@ -81,7 +85,7 @@ class JokeJudge:
         try:
             start_idx = text.find('{')
             end_idx = text.rfind('}')
-            if start_idx != -1 and end_idx != -1:
+            if (start_idx != -1 and end_idx != -1):
                 return text[start_idx:end_idx+1].strip()
         except:
             pass
@@ -453,29 +457,48 @@ class JokeJudge:
                 print(f"  {method.upper()}: {stats['mean']:.2f}/10 " +
                       f"(median: {stats['median']}, stdev: {stats['stdev']:.2f})")
         
-        # Determine winner
-        if len(methods) > 1:
-            best_method = max(methods, key=lambda m: overall_stats[m]['mean'])
-            margin = abs(overall_stats[best_method]['mean'] - 
-                         overall_stats[other_method]['mean'])
-            other_method = [m for m in methods if m != best_method][0]
+        # Determine winner - Only compare when there are exactly 2 methods
+        if len(methods) == 2:
+            # Get the two methods
+            method1, method2 = methods
+            
+            # Calculate the margin
+            margin = abs(overall_stats[method1]['mean'] - overall_stats[method2]['mean'])
+            
+            # Determine which method scored higher
+            best_method = method1 if overall_stats[method1]['mean'] > overall_stats[method2]['mean'] else method2
+            other_method = method2 if best_method == method1 else method1
             
             print("\n" + "-"*60)
             if margin > 0.5:
                 print(f"CONCLUSION: {best_method.upper()} jokes scored higher by {margin:.2f} points on average.")
             else:
                 print(f"CONCLUSION: Both approaches performed similarly (margin: {margin:.2f}).")
+        elif len(methods) > 2:
+            # Handle comparison with more than 2 methods
+            print("\n" + "-"*60)
+            print("CONCLUSION: Multiple methods compared. Overall score ranking:")
+            
+            # Sort methods by mean score in descending order
+            sorted_methods = sorted(methods, key=lambda m: overall_stats[m]['mean'], reverse=True)
+            for i, method in enumerate(sorted_methods):
+                print(f"  {i+1}. {method.upper()}: {overall_stats[method]['mean']:.2f}/10")
         
         print("="*60)
 
-
 def main():
     """Main function to handle CLI arguments and run the joke judge"""
+    from utils.config import initialize_config
+    
+    if not initialize_config():
+        print("Failed to initialize configuration. Please check your .env file.")
+        return
+    
     parser = argparse.ArgumentParser(description="Judge and compare jokes from different generation methods")
     parser.add_argument("--multistage", help="Path to multi-stage framework results JSON")
     parser.add_argument("--baseline", help="Path to baseline generator results JSON")
     parser.add_argument("--output", default="joke_judgments.json", help="Output file for judgments")
-    parser.add_argument("--model", default="deepseek/deepseek-chat:free", help="Model to use for judging")
+    parser.add_argument("--model", default=JUDGE_MODEL, help="Model to use for judging")
     parser.add_argument("--samples", type=int, default=0, help="Number of jokes to sample from each method (0 for all)")
     parser.add_argument("--api-endpoint", help="Custom API endpoint URL (e.g., OpenRouter)")
     parser.add_argument("--api-key", help="API key for the endpoint (or set OPENROUTER_API_KEY env var)")
@@ -485,14 +508,12 @@ def main():
     
     # Check for API keys
     if args.api_endpoint and "openrouter" in args.api_endpoint:
-        api_key = args.api_key or os.getenv("OPENROUTER_API_KEY") 
+        api_key = args.api_key or get_openrouter_key()
         if not api_key:
-            print("Warning: OPENROUTER_API_KEY environment variable not set and --api-key not provided")
-            print("Set it with: export OPENROUTER_API_KEY='your-key-here'")
+            print("Warning: OPENROUTER_API_KEY not found in configuration or command line arguments")
             return
-    elif not os.getenv("OPENAI_API_KEY"):
-        print("Warning: OPENAI_API_KEY environment variable not set")
-        print("Set it with: export OPENAI_API_KEY='your-key-here'")
+    elif not get_openai_key():
+        print("Warning: OPENAI_API_KEY not found in configuration")
         return
     
     if not args.multistage and not args.baseline:
